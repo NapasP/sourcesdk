@@ -17,6 +17,7 @@
 #include "tier0/dbg.h"
 #include "tier0/platform.h"
 
+#include "mathlib/mathlib.h"
 #include "tier0/memalloc.h"
 #include "tier0/memdbgon.h"
 
@@ -66,8 +67,8 @@ public:
 		BlockHeader_t *m_pBlockHeader;
 		intp m_nIndex;
 
-		bool operator==( const Iterator_t it ) const	{ return m_pBlockHeader == it.m_pBlockHeader && m_nIndex == it.m_nIndex; }
-		bool operator!=( const Iterator_t it ) const	{ return m_pBlockHeader != it.m_pBlockHeader || m_nIndex != it.m_nIndex; }
+		bool operator==( const Iterator_t& it ) const	{ return m_pBlockHeader == it.m_pBlockHeader && m_nIndex == it.m_nIndex; }
+		bool operator!=( const Iterator_t& it ) const	{ return m_pBlockHeader != it.m_pBlockHeader || m_nIndex != it.m_nIndex; }
 	};
 	Iterator_t First() const							{ return m_pBlocks ? Iterator_t( m_pBlocks, 0 ) : InvalidIterator(); }
 	Iterator_t Next( const Iterator_t &it ) const

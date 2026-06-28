@@ -277,7 +277,7 @@ class CCommand
 public:
 	CCommand();
 	CCommand( int nArgC, const char **ppArgV );
-	bool Tokenize( CUtlString pCommand, characterset_t *pBreakSet = nullptr );
+	bool Tokenize( const char *pCommand, const characterset_t *pBreakSet = nullptr );
 	void Reset();
 
 	int ArgC() const;
@@ -311,10 +311,10 @@ private:
 	CUtlVectorFixedGrowable<char, COMMAND_MAX_LENGTH> m_ArgvBuffer;
 	CUtlVectorFixedGrowable<char*, COMMAND_MAX_ARGC> m_Args;
 
-	// Temporary fix
-	uint8 m_Unk001 = 0;
-	uint64 m_Unk002 = 0x7FF8000000000000;
-	uint64 m_Unk003 = 0;
+	// Set from CCommandBuffer::AddText/DequeueNextCommand, reset in Tokenize
+	bool m_bFromUntrustedSource = false; // command from untrusted source (client)
+	double m_flExecTime = NAN; // NaN = execute immediately
+	uint64 m_nRequiredFlags = 0; // required ConVar flags (see CCommandBuffer::SetRequiredFlags)
 };
 
 inline int CCommand::MaxCommandLength()
@@ -428,19 +428,16 @@ struct CompletionCallbackInfo_t
 {
 	CompletionCallbackInfo_t() :
 		m_fnCompletionCallback( nullptr ),
-		m_bIsFunction( false ),
 		m_bIsInterface( false )
 	{}
 
 	CompletionCallbackInfo_t( FnCommandCompletionCallback cb ) :
 		m_fnCompletionCallback( cb ),
-		m_bIsFunction( cb ? true : false ),
 		m_bIsInterface( false )
 	{}
 
 	CompletionCallbackInfo_t( ICommandCompletionCallback *cb ) :
 		m_pCommandCompletionCallback( cb ),
-		m_bIsFunction( false ),
 		m_bIsInterface( cb ? true : false )
 	{}
 
@@ -464,7 +461,6 @@ struct CompletionCallbackInfo_t
 		ICommandCompletionCallback *m_pCommandCompletionCallback;
 	};
 
-	bool m_bIsFunction;
 	bool m_bIsInterface;
 };
 
@@ -518,9 +514,9 @@ private:
 	static const uint16 kInvalidAccessIndex = 0xFFFFu;
 
 public:
-	ConCommandRef() : m_CommandAccessIndex( kInvalidAccessIndex ), m_CommandRegisteredIndex( 0 ) {}
-	ConCommandRef( uint16 command_idx ) : m_CommandAccessIndex( command_idx ), m_CommandRegisteredIndex( 0 ) {}
-	ConCommandRef( uint16 access_idx, uint16 reg_idx ) : m_CommandAccessIndex( access_idx ), m_CommandRegisteredIndex( reg_idx ) {}
+	ConCommandRef() : m_CommandAccessIndex( kInvalidAccessIndex ), m_CommandRegisteredIndex( 0u ) {}
+	ConCommandRef( uint16 command_idx ) : m_CommandAccessIndex( command_idx ), m_CommandRegisteredIndex( 0u ) {}
+	ConCommandRef( uint16 access_idx, uint32 reg_idx ) : m_CommandAccessIndex( access_idx ), m_CommandRegisteredIndex( reg_idx ) {}
 
 	ConCommandRef( const char *name, bool allow_defensive = false );
 
@@ -549,16 +545,18 @@ public:
 		return GetRawData()->GetAutoCompleteSuggestions( command, completions );
 	}
 
-	void InvalidateRef() { m_CommandAccessIndex = kInvalidAccessIndex; m_CommandRegisteredIndex = 0; }
+	void InvalidateRef() { m_CommandAccessIndex = kInvalidAccessIndex; m_CommandRegisteredIndex = 0u; }
 	bool IsValidRef() const { return m_CommandAccessIndex != kInvalidAccessIndex; }
 	uint16 GetAccessIndex() const { return m_CommandAccessIndex; }
-	uint16 GetRegisteredIndex() const { return m_CommandRegisteredIndex; }
+	uint32 GetRegisteredIndex() const { return m_CommandRegisteredIndex; }
+
+	explicit operator bool() const { return m_CommandAccessIndex != kInvalidAccessIndex; }
 
 private:
 	// Index into internal linked list of concommands
 	uint16 m_CommandAccessIndex;
 	// Commands registered positional index
-	uint16 m_CommandRegisteredIndex;
+	uint32 m_CommandRegisteredIndex;
 };
 
 //-----------------------------------------------------------------------------
@@ -1068,11 +1066,8 @@ public:
 	bool IsValidRef() const { return m_ConVar.m_iAccessIndex != kInvalidAccessIndex; }
 	uint16 GetAccessIndex() const { return m_ConVar.m_iAccessIndex; }
 	uint32 GetRegisteredIndex() const { return m_ConVar.m_iRegisteredIndex; }
-
-	operator uint64() const
-	{
-		return m_Handle;
-	}
+	explicit operator bool() const { return m_ConVar.m_iAccessIndex != kInvalidAccessIndex; }
+	operator uint64() const { return m_Handle; }
 
 protected:
 	struct Handle_t

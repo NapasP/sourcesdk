@@ -17,19 +17,18 @@
 #include "icvar.h"
 #include "edict.h"
 #include "mathlib/vplane.h"
-#include "iserverentity.h"
-#include "engine/ivmodelinfo.h"
 #include "soundflags.h"
 #include "bitvec.h"
 #include "tier1/bitbuf.h"
 #include "tier1/utlmap.h"
 #include "tier0/utlstring.h"
 #include "tier0/bufferstring.h"
+#include "entity2/entityidentity.h"
 #include <steam/steamclientpublic.h>
 #include "playerslot.h"
 #include "playeruserid.h"
 #include <iloopmode.h>
-
+#include "networkbasetypes.pb.h"
 #include "network_connection.pb.h"
 
 //-----------------------------------------------------------------------------
@@ -99,6 +98,9 @@ class ILoadingSpawnGroup;
 class IToolGameSimulationAPI;
 class CCLCMsg_Move_t;
 class CCLCMsg_SplitPlayerConnect_t;
+class CNetMessage;
+class INetworkMessageInternal;
+struct Entity2Networkable_t;
 
 namespace google
 {
@@ -165,11 +167,14 @@ public:
 
 	virtual void		SetFrameTimeAmnesty( const char *amnesty, int, float frametime ) = 0;
 	virtual const char *GetFrameTimeAmnesty( bool check_cvar ) = 0;
-	virtual void		ShowFrameTimeReport( void *, bool ) = 0;
 
+	virtual void		unk027() = 0;
+
+	virtual void		ShowFrameTimeReport( void *, bool ) = 0;
 	virtual void		DumpNetStats( void *pNetStatData, const std::function< void ( const char * )> &func ) = 0; 
-	virtual void		unk_29() = 0;
 	virtual void		unk_30() = 0;
+	
+	virtual uint32		GetLongFrameCount() = 0;
 
 	// Tell engine to change level ( "changelevel s1\n" or "changelevel2 s1 s2\n" )
 	virtual void		ChangeLevel( const char *s1, const char *s2 ) = 0;
@@ -307,34 +312,37 @@ public:
 
 	virtual CPlayerSlot CreateClient( CPlayerSlot nRequestSlot, CSteamID nSteamID, const char *pszName ) = 0;
 	virtual void SetClientConnect( CPlayerSlot nSlot, bool b = true ) = 0;
+	virtual SignonState_t GetClientSignonState( CPlayerSlot nSlot ) = 0;
 	virtual void KickClient( CPlayerSlot nSlot, const char *szInternalReason, ENetworkDisconnectionReason reason ) = 0;
 	virtual void BanClient( CPlayerSlot nSlot, float flDuration, bool bKick ) = 0;
 	virtual void BanClient( CSteamID steamId, float flDuration, bool bKick ) = 0;
 
-	virtual void unk_98() = 0;
-	virtual void unk_99() = 0;
-	virtual void unk_100() = 0;
-	virtual void unk_101() = 0;
-	virtual void unk_102() = 0;
-	virtual void unk_103() = 0;
-	virtual void unk_104() = 0;
+	virtual int64 StartHltvReplay( CPlayerSlot nSlot, void *pRequest ) = 0;
+	virtual int64 ForceStopHltvReplay( CPlayerSlot nSlot ) = 0;
+	virtual int64 StopAllHltvReplays() = 0;
+	virtual uint32 GetHltvLastSendTick( CPlayerSlot nSlot ) = 0;
+	virtual bool IsHltvReplayBufferAvailable() = 0;
+	virtual bool CanStartHltvReplay( CPlayerSlot nSlot, uint32 nDelay ) = 0;
+	virtual int64 ResetHltvReplayRequestTime( CPlayerSlot nSlot ) = 0;
 
 	virtual void SetClientUpdateRate( CPlayerSlot nSlot, float flUpdateRate ) = 0;
 	virtual void UpdateClientRate( CPlayerSlot nSlot ) = 0;
 	virtual void UpdateClientRate2( CPlayerSlot nSlot ) = 0;
 
-	virtual void unk_108() = 0;
-	virtual void unk_109() = 0;
-	virtual void unk_110() = 0;
-	virtual void unk_111() = 0;
-	virtual void unk_112() = 0;
-	virtual void unk_113() = 0;
-	virtual void unk_114() = 0;
-	virtual void unk_115() = 0;
-	virtual void unk_116() = 0;
-	virtual void unk_117() = 0;
-	virtual void unk_118() = 0;
-	virtual void unk_119() = 0;
+	virtual uint64 RemoveHltvReplayRequest( float flDelay, void *pUnk, int nRequestId ) = 0;
+	virtual void *AddHltvReplayRequest( uint32, int, uint32, int, int ) = 0;
+	virtual bool IsHltvReplayEnabled() = 0;
+	virtual uint64 QueueHltvReplayEvent( int, uint8, uint8 ) = 0;
+	virtual bool IsHltvReplayActive() = 0;
+	virtual void RecordNetworkSpike() = 0;
+	virtual void RecordDemo( const char *pszFilename ) = 0;
+	virtual void StopRecordingDemo( void *pUnk ) = 0;
+
+	virtual bool BroadcastEvent( INetworkMessageInternal *pSerializer, const CNetMessage *pMessage ) = 0;
+	virtual const char *GetHltvReplayStats() = 0;
+	virtual const char *GetName() = 0;
+
+	virtual CCommand *GetClientCommand( CPlayerSlot nSlot ) = 0;
 };
 
 abstract_class IServerGCLobby
@@ -367,9 +375,9 @@ public:
 
 	virtual void			PreWorldUpdate( bool simulating ) = 0;
 
-	virtual CUtlMap<int, Entity2Networkable_t>	*GetEntity2Networkables( void ) const = 0;
+	virtual CUtlMap< int, Entity2Networkable_t > &GetEntity2Networkables( void ) const = 0;
 
-	virtual void			*GetEntityInfo() = 0;
+	virtual bool			GetEntity2Networkable( CEntityIndex nEntryIndex, Entity2Networkable_t *info ) = 0;
 
 	// Called to apply lobby settings to a dedicated server
 	virtual void			ApplyGameSettings( KeyValues *pKV ) = 0;
@@ -479,14 +487,17 @@ public:
 	// TERROR: Perform any PVS cleanup before a full update
 	virtual void			PrepareForFullUpdate( CEntityIndex nPlayerEntityIndex ) = 0;
 	
-	// Frees the entity attached to this edict
-	virtual void			FreeContainingEntity( CEntityIndex nEntityIndex ) = 0;
-	
-	virtual bool			GetWorldspaceCenter( CEntityIndex nEntityIndex, Vector *pCenter ) const = 0;
-	
 	virtual bool			ShouldClientReceiveStringTableUserData( const INetworkStringTable *pTable, int stringNumber, const CCheckTransmitInfo *pInfo ) = 0;
-	
+
 	virtual void			ResetChangeAccessorsSerialNumbersToZero() = 0;
+
+	virtual bool			GetWorldspaceCenter( CEntityIndex nEntityIndex, Vector *pCenter ) const = 0;
+
+	// See entity2/entitynetwork.h
+	virtual void			PrePackEntities( const CUtlVector< Entity2Networkable_t * > &vecEntities ) = 0;
+
+	virtual void			AddEntityToSteadyState( const Entity2Networkable_t *pNetworkable ) = 0; // Adds a steady-state eligible entity to the transmit bitset
+	virtual void			RemoveEntityFromSteadyState( const Entity2Networkable_t *pNetworkable ) = 0; // Removes an entity from the transmit bitset
 };
 
 #define INTERFACEVERSION_SERVERCONFIG			"Source2ServerConfig001"
@@ -565,6 +576,9 @@ public:
 	// The client has typed a command at the console
 	virtual void			ClientCommand( CPlayerSlot slot, const CCommand &args ) = 0;
 
+	// Stores the entity baseline / string table data buffer pointer on the player controller.
+	virtual void			ClientStringTableData( CPlayerSlot slot, void *pData ) = 0;
+
 	// A player changed one/several replicated cvars (name etc)
 	virtual void			ClientSettingsChanged( CPlayerSlot slot ) = 0;
 
@@ -597,14 +611,12 @@ public:
 
 	// The client has submitted a keyvalues command
 	virtual void			ClientCommandKeyValues( CPlayerSlot slot, KeyValues *pKeyValues ) = 0;
-	
-	virtual void			unk001() = 0;
+
+	virtual bool			IsGamePausable() = 0;
 
 	virtual bool			ClientCanPause( CPlayerSlot slot ) = 0;
 
-	virtual void			HLTVClientFullyConnect( int index, const CSteamID &steamID ) = 0;
-
-	virtual bool			CanHLTVClientConnect( int index, const CSteamID &steamID, int *pRejectReason ) = 0;
+	virtual bool			HLTVClientFullyConnect( int index, const CSteamID &steamID ) = 0;
 
 	virtual void			StartHLTVServer( CEntityIndex index ) = 0;
 
@@ -612,18 +624,26 @@ public:
 
 	virtual IHLTVDirector	*GetHLTVDirector( void ) = 0;
 
-	virtual void			unk101( CPlayerSlot slot ) = 0;
-	virtual void			unk102( CPlayerSlot slot ) = 0;
+	// return m_nTickBase
+	virtual uint32			GetClientTickCount( CPlayerSlot slot ) = 0;
+
+	virtual void			GetClientVisibilityInfo( CPlayerSlot slot, vis_info_t *pOutVisInfo ) = 0;
 
 	// Handles incoming usermessages from the client
 	virtual void			ClientSvcUserMessage( CPlayerSlot slot, int um_type, uint32 size, const void *buf ) = 0;
 
-	// Something pawn related
-	virtual void			unk201() = 0;
-	virtual void			unk202() = 0;
+	// reads pawn->m_hViewEntity
+	virtual int				GetClientViewEntity( CPlayerSlot slot, CEntityHandle *outViewEntity ) = 0;
 
-	virtual void			unk203() = 0;
-	virtual void			unk204() = 0;
+	virtual bool			ProcessClientVoiceData( CPlayerSlot slot, void *pVoiceInfo ) = 0;
+
+	virtual bool			ValidateClientString( const char *pszCurrent, const char *pszExpected ) = 0;
+
+	virtual bool			CanProcessNetMessage( void *pNetMessage, void *pClient ) = 0;
+
+	// Called from engine's "exec" command handler. Returns false if commands are disallowed
+	// (triggers "Config %s contains invalid commands" warning). Workshop command sanitization.
+	virtual bool			ValidateScriptCommands( const char *pszCommandText, CBufferString *pFilteredOutput ) = 0;
 };
 
 typedef IVEngineServer2 IVEngineServer;

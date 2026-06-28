@@ -23,6 +23,8 @@
 #include "entitydatainstantiator.h"
 #include "resourcefile/resourcetype.h"
 
+#include "ientitylistener.h"
+
 class CKV3Arena;
 class CEntityClass;
 class CEntityComponentHelper;
@@ -152,7 +154,6 @@ class CEventQueue
 public:
 	CAtomicMutex m_Mutex;
 	EventQueuePrioritizedEvent_t m_Events;
-	int m_iListCount;
 };
 
 // Entity notifications //
@@ -170,8 +171,11 @@ struct EntityDormancyChange_t : EntityNotification_t
 
 struct EntitySpawnInfo_t : EntityNotification_t
 {
-	CEntityKeyValues* m_pKeyValues;
-	uint64 m_Unk1;
+	const CEntityKeyValues* m_pKeyValues;
+	int m_Unk1;
+	uint16 m_SpawnOrder;
+	uint8 m_Depth;
+	uint8 m_OriginalSpawnOrder;
 };
 
 struct EntityActivation_t : EntityNotification_t
@@ -197,15 +201,6 @@ struct CEntityPrecacheContext
 struct SecondaryPrecacheMemberCallback_t
 {
 	void (CEntityInstance::*pfnPrecache)(ResourceHandle_t hResource, const CEntityPrecacheContext* pContext);
-};
-
-class IEntityListener
-{
-public:
-	virtual void OnEntityCreated(CEntityInstance* pEntity) {};
-	virtual void OnEntitySpawned(CEntityInstance* pEntity) {};
-	virtual void OnEntityDeleted(CEntityInstance* pEntity) {};
-	virtual void OnEntityParentChanged(CEntityInstance* pEntity, CEntityInstance* pNewParent) {};
 };
 
 struct CEntityResourceManifestLock
@@ -276,14 +271,15 @@ public:
 	virtual						~CEntitySystem() = 0;
 
 	// This function is called in CGameEntitySystem::ProcessEventQueue()
-	virtual GameTime_t			unk_001( int ) = 0;
+	virtual GameTime_t			GetCurTime( WorldGroupId_t ) = 0;
 
 	virtual void				ClearEntityDatabase(ClearEntityDatabaseMode_t eMode) = 0;
 	virtual CEntityInstance*	FindEntityProcedural(const char* szName, CEntityInstance* pSearchingEntity = nullptr, CEntityInstance* pActivator = nullptr, CEntityInstance* pCaller = nullptr) = 0;
-	virtual void				OnEntityParentChanged(CEntityInstance* pEntity, CEntityInstance* pNewParent) = 0; // empty function
-	virtual void				OnAddEntity(CEntityInstance* pEnt, CEntityHandle handle) = 0; // empty function
-	virtual void				OnRemoveEntity(CEntityInstance* pEnt, CEntityHandle handle) = 0; // empty function
+	virtual void				OnEntityParentChanged(CEntityInstance* pEntity, CEntityInstance* pNewParent) = 0;
+	virtual void				OnAddEntity(CEntityInstance* pEnt, CEntityHandle handle) = 0;
+	virtual void				OnRemoveEntity(CEntityInstance* pEnt, CEntityHandle handle) = 0;
 	virtual WorldGroupId_t		GetSpawnGroupWorldId(SpawnGroupHandle_t hSpawnGroup) = 0;
+	virtual void				SortEntities(int nCount, const EntitySpawnInfo_t* pInfo) = 0;
 	virtual void				Spawn(int nCount, const EntitySpawnInfo_t* pInfo) = 0;
 	virtual void				Activate(int nCount, const EntityActivation_t* pActivates, ActivateType_t activateType) = 0;
 	virtual void				PostDataUpdate(int nCount, const PostDataUpdateInfo_t *pInfo) = 0;
